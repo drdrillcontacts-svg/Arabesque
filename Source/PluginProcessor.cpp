@@ -14,25 +14,34 @@ ArabesqueAudioProcessor::ArabesqueAudioProcessor()
     synth.addSound (new ArabesqueSound());
     synth.setNoteStealingEnabled (true);
 
-    currentPresetName = getFactoryPresets().front().name;
+    applyFactoryPreset (0);
 }
 
 //==============================================================================
 void ArabesqueAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    synth.setCurrentPlaybackSampleRate (sampleRate);
+    audioReady.store (false);
+
+    const double sr = sampleRate > 0.0 ? sampleRate : 44100.0;
+    const int block = juce::jmax (1, samplesPerBlock);
+
+    synth.setCurrentPlaybackSampleRate (sr);
     for (int i = 0; i < synth.getNumVoices(); ++i)
         if (auto* v = dynamic_cast<ArabesqueVoice*> (synth.getVoice (i)))
-            v->prepare (sampleRate);
+            v->prepare (sr);
 
-    effects.prepare (sampleRate, samplesPerBlock, juce::jmax (1, getTotalNumOutputChannels()));
-    arpeggiator.prepare (sampleRate);
+    effects.prepare (sr, block, juce::jmax (2, getTotalNumOutputChannels()));
+    arpeggiator.prepare (sr);
     lastAppliedVoices = -1;
+    ensureVoiceCount();
     keyboardState.reset();
+    audioReady.store (true);
 }
 
 void ArabesqueAudioProcessor::releaseResources()
 {
+    audioReady.store (false);
+    effects.release();
     keyboardState.reset();
 }
 
@@ -71,9 +80,9 @@ void ArabesqueAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     juce::ScopedNoDenormals noDenormals;
 
     const int numSamples = buffer.getNumSamples();
-    if (getTotalNumOutputChannels() == 0 || numSamples == 0)
+    if (! audioReady.load() || getTotalNumOutputChannels() == 0 || numSamples == 0)
     {
-        midi.clear();
+        buffer.clear();
         return;
     }
 
@@ -166,7 +175,7 @@ const juce::String ArabesqueAudioProcessor::getProgramName (int index)
 {
     auto& presets = getFactoryPresets();
     return juce::isPositiveAndBelow (index, (int) presets.size())
-         ? juce::String (index + 1).paddedLeft ('0', 2) + " - " + presets[(size_t) index].name
+         ? juce::String (index + 1).paddedLeft ('0', 2) + "  " + presets[(size_t) index].name
          : juce::String();
 }
 

@@ -27,15 +27,13 @@ juce_add_plugin(ARABESQUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE
     VST3_CATEGORIES "Instrument" "Synth"
     AU_MAIN_TYPE kAudioUnitType_MusicDevice
 )
 
 juce_generate_juce_header(ARABESQUE)
-
-juce_add_binary_data(ArabesqueAssets SOURCES Assets/Artwork.jpg)
 
 target_sources(ARABESQUE PRIVATE
     Source/PluginProcessor.cpp
@@ -50,10 +48,10 @@ target_compile_definitions(ARABESQUE PUBLIC
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
+    JUCE_MODAL_LOOPS_PERMITTED=1
 )
 
 target_link_libraries(ARABESQUE PRIVATE
-    ArabesqueAssets
     juce::juce_audio_utils
     juce::juce_dsp
     PUBLIC

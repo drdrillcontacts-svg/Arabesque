@@ -71,6 +71,7 @@ private:
 
     int  lastAppliedVoices = -1;
     float lastUiBend = -99.0f, lastUiMod = -99.0f;
+    std::atomic<bool> audioReady { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ArabesqueAudioProcessor)
 };

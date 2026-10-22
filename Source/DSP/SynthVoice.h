@@ -5,16 +5,13 @@
 #include "SynthSound.h"
 #include "../Parameters.h"
 
-//==============================================================================
-// Shared data the processor passes down to every voice (host tempo, wheels).
 struct VoiceSharedState
 {
     std::atomic<double> bpm   { 120.0 };
-    std::atomic<float>  bend  { 0.0f }; // semitones, set from pitch wheel / UI wheel
-    std::atomic<float>  mod   { 0.0f }; // 0..1, mod wheel (adds to vibrato depth)
+    std::atomic<float>  bend  { 0.0f };
+    std::atomic<float>  mod   { 0.0f };
 };
 
-//==============================================================================
 class ArabesqueVoice final : public juce::SynthesiserVoice
 {
 public:
@@ -30,39 +27,40 @@ public:
 
 private:
     static float pitchRatioFromSemitones (float semis) noexcept;
+    std::atomic<float>* gp (const char* id) noexcept;
 
     juce::AudioProcessorValueTreeState& apvts;
     VoiceSharedState& sharedState;
-
-    // raw parameter pointers (read once per block - safe, lock-free)
-    struct ParamPtr
-    {
-        std::atomic<float>* get (juce::AudioProcessorValueTreeState& s, const char* id) { return s.getRawParameterValue (id); }
-    };
+    std::atomic<float> dummy { 0.0f };
 
     std::atomic<float> *osc1Wave, *osc1Oct, *osc1Semi, *osc1Fine, *mixOsc1;
     std::atomic<float> *osc2Wave, *osc2Oct, *osc2Semi, *osc2Fine, *mixOsc2;
-    std::atomic<float> *mixNoise, *mixSub;
-    std::atomic<float> *filterType, *cutoff, *resonance, *keyFollow;
+    std::atomic<float> *mixNoise, *mixSub, *pwm, *oscFM;
+    std::atomic<float> *unisonN, *unisonDet, *unisonSpr;
+    std::atomic<float> *filterType, *cutoff, *resonance, *keyFollow, *filterEnvAmt, *filterDrive;
     std::atomic<float> *ampA, *ampD, *ampS, *ampR;
     std::atomic<float> *fltA, *fltD, *fltS, *fltR;
     std::atomic<float> *pchA, *pchD, *pchS, *pchR;
     std::atomic<float> *lfoShape, *lfoRate, *lfoSync, *lfoSyncRate, *lfoDepth;
     std::atomic<float> *vibrato, *glide;
 
-    PolyBLEPOscillator osc1, osc2;
+    static constexpr int kMaxUni = 7;
+    PolyBLEPOscillator osc1u[kMaxUni], osc2u[kMaxUni];
     SubOscillator      sub;
     NoiseSource        noise;
     VoiceLFO           lfo;
     TPTStateVariableFilter filter;
     juce::ADSR ampEnv, filterEnv, pitchEnv;
 
-    juce::SmoothedValue<float> smoothedCutoff; // stops zipper noise on the cutoff knob
+    juce::SmoothedValue<float> smoothedCutoff;
     juce::LinearSmoothedValue<float> smoothedMix[4];
 
+    juce::Random rng { 7 };
     double sr = 44100.0;
-    double currentPitchSemis = 0.0, targetPitchSemis = 0.0; // glide in pitch domain (log), not Hz
+    double currentPitchSemis = 0.0, targetPitchSemis = 0.0;
     float  noteVelocity = 0.0f;
+    float  driftCents = 0.0f;
+    float  dcX1 = 0.0f, dcY1 = 0.0f;
     int    currentNoteNumber = 60;
     bool   isPrepared = false;
 
