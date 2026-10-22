@@ -1,0 +1,65 @@
+name: Build ARABESQUE
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows VST3 x64
+            os: windows-latest
+            artifact: ARABESQUE-Windows-x64-VST3
+            plugin_path: build/ARABESQUE_artefacts/Release/VST3
+            arch_flags: ""
+          - name: macOS AU + VST3 (Universal)
+            os: macos-14
+            artifact: ARABESQUE-macOS-AU-VST3
+            plugin_path: build/ARABESQUE_artefacts/Release
+            arch_flags: -DCMAKE_OSX_ARCHITECTURES=arm64;x86_64
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        uses: lukka/get-cmake@latest
+
+      - name: Cache JUCE
+        id: juce-cache
+        uses: actions/cache@v4
+        with:
+          path: JUCE
+          key: juce-8.0.9-${{ runner.os }}
+
+      - name: Checkout JUCE
+        if: steps.juce-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.9
+          path: JUCE
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -S . -B build -DJUCE_DIR="${{ github.workspace }}/JUCE" -DCMAKE_BUILD_TYPE=Release ${{ matrix.arch_flags }}
+
+      - name: Build plugin
+        run: cmake --build build --config Release --parallel 2
+
+      # On macOS the Release folder contains the AU component AND the VST3;
+      # on Windows it contains the VST3 folder only.
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.plugin_path }}
+          if-no-files-found: error
+          compression-level: 9
