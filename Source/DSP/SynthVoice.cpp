@@ -112,7 +112,7 @@ void ArabesqueVoice::controllerMoved (int controllerNumber, int newControllerVal
 
 void ArabesqueVoice::renderNextBlock (juce::AudioBuffer<float>& output, int start, int numSamples)
 {
-    if (! isVoiceActive() || ! isPrepared)
+    if (! isVoiceActive() || ! isPrepared || output.getNumChannels() <= 0 || numSamples <= 0)
         return;
 
     //------------------------------------------------------- per-block reads

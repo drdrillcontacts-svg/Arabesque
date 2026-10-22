@@ -2,10 +2,6 @@
 #include <JuceHeader.h>
 
 //==============================================================================
-// ARABESQUE LookAndFeel — recreates the dark-gold Turkish aesthetic of the UI
-// mock: copper arcs, warm metal knobs, serif captions, glowing accents.
-//==============================================================================
-
 namespace ArabesqueColours
 {
     const juce::Colour background      { 0xff0b0a09 };
@@ -44,9 +40,14 @@ public:
         setColour (juce::TextButton::textColourOffId,           ArabesqueColours::textDim);
         setColour (juce::TextButton::textColourOnId,            ArabesqueColours::goldBright);
         setColour (juce::Label::textColourId,                   ArabesqueColours::textWarm);
+        setColour (juce::Label::backgroundColourId,             juce::Colours::transparentBlack);
+        setColour (juce::Label::outlineColourId,                juce::Colours::transparentBlack);
         setColour (juce::Slider::textBoxTextColourId,           ArabesqueColours::textWarm);
         setColour (juce::Slider::textBoxBackgroundColourId,     juce::Colour (0xff14110d));
         setColour (juce::Slider::textBoxOutlineColourId,        juce::Colour (0xff3d332a));
+        setColour (juce::Slider::trackColourId,                 ArabesqueColours::gold);
+        setColour (juce::Slider::backgroundColourId,            juce::Colour (0xff171310));
+        setColour (juce::Slider::thumbColourId,                 ArabesqueColours::goldBright);
         setColour (juce::MidiKeyboardComponent::whiteNoteColourId,              ArabesqueColours::keyWhite);
         setColour (juce::MidiKeyboardComponent::blackNoteColourId,              juce::Colour (0xff1b1713));
         setColour (juce::MidiKeyboardComponent::keySeparatorLineColourId,       juce::Colour (0xff8a6c42));
@@ -60,7 +61,8 @@ public:
 
     static juce::Font serifFont (float size, bool bold = false)
     {
-        return juce::Font (juce::FontOptions ("Palatino", bold ? "Bold" : "Regular", size));
+        juce::ignoreUnused (bold);
+        return juce::Font (juce::FontOptions (size));
     }
 
     static juce::Font captionFont (float size)
@@ -68,27 +70,27 @@ public:
         return juce::Font (juce::FontOptions (size));
     }
 
-    //------------------------------------------------------------ rotary ----
     void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                            float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
-                           juce::Slider& slider) override
+                           juce::Slider&) override
     {
-        juce::ignoreUnused (rotaryEndAngle);
-        auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (2.0f);
+        auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (1.0f);
         const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
         const float cx = bounds.getCentreX(), cy = bounds.getCentreY();
         const float startAngle = rotaryStartAngle;
-        const float endAngle = startAngle + (sliderPos * 2.0f * juce::MathConstants<float>::pi * 0.75f);
+        const float endAngle = startAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
         const bool big = radius > 34.0f;
 
-        // -- outer glow on hover -------------------------------------------
-        if (slider.isMouseOverOrDragging())
+        // Cover the skin knob (including its baked arc) so live values don't double-draw.
+        g.setColour (ArabesqueColours::panelFill);
+        g.fillEllipse (cx - radius, cy - radius, radius * 2.0f, radius * 2.0f);
+
+        if (big)
         {
-            g.setColour (ArabesqueColours::orangeGlow.withAlpha (0.18f));
-            g.fillEllipse (cx - radius - 5.0f, cy - radius - 5.0f, (radius + 5.0f) * 2.0f, (radius + 5.0f) * 2.0f);
+            g.setColour (ArabesqueColours::orangeGlow.withAlpha (0.10f));
+            g.fillEllipse (cx - radius - 4.0f, cy - radius - 4.0f, (radius + 4.0f) * 2.0f, (radius + 4.0f) * 2.0f);
         }
 
-        // -- knob bezel ------------------------------------------------------
         juce::ColourGradient bezelGrad (juce::Colour (0xff2e2924), cx, cy - radius,
                                         juce::Colour (0xff141110), cx, cy + radius, false);
         g.setGradientFill (bezelGrad);
@@ -97,14 +99,13 @@ public:
         g.setColour (juce::Colour (0xff0a0908));
         g.drawEllipse (cx - radius + 0.5f, cy - radius + 0.5f, radius * 2.0f - 1.0f, radius * 2.0f - 1.0f, 1.0f);
 
-        // -- track arc -------------------------------------------------------
         const float arcRadius = radius - (big ? 6.0f : 4.0f);
         juce::Path trackArc;
-        trackArc.addCentredArc (cx, cy, arcRadius, arcRadius, 0.0f, startAngle, startAngle + 2.0f * juce::MathConstants<float>::pi * 0.75f, true);
+        trackArc.addCentredArc (cx, cy, arcRadius, arcRadius, 0.0f, startAngle, rotaryEndAngle, true);
         g.setColour (ArabesqueColours::arcTrack);
-        g.strokePath (trackArc, juce::PathStrokeType (big ? 3.5f : 2.5f));
+        g.strokePath (trackArc, juce::PathStrokeType (big ? 3.5f : 2.5f, juce::PathStrokeType::curved,
+                                                      juce::PathStrokeType::rounded));
 
-        // -- value arc -------------------------------------------------------
         if (sliderPos > 0.001f)
         {
             juce::Path valueArc;
@@ -116,7 +117,6 @@ public:
                                                           juce::PathStrokeType::rounded));
         }
 
-        // -- knob body -------------------------------------------------------
         const float bodyRadius = arcRadius - (big ? 8.0f : 6.0f);
         juce::ColourGradient bodyGrad (juce::Colour (0xff3a332c), cx, cy - bodyRadius,
                                        juce::Colour (0xff0f0d0b), cx, cy + bodyRadius, false);
@@ -127,7 +127,6 @@ public:
         g.drawEllipse (cx - bodyRadius + 0.5f, cy - bodyRadius + 0.5f,
                        bodyRadius * 2.0f - 1.0f, bodyRadius * 2.0f - 1.0f, 1.0f);
 
-        // -- pointer ----------------------------------------------------------
         juce::Path pointer;
         const float pointerLen = bodyRadius * 0.9f;
         const float pointerThickness = big ? 3.2f : 2.4f;
@@ -135,12 +134,48 @@ public:
         g.setColour (ArabesqueColours::goldBright);
         g.fillPath (pointer, juce::AffineTransform::rotation (endAngle).translated (cx, cy));
 
-        // centre dot
         g.setColour (juce::Colour (0xff0d0b09));
         g.fillEllipse (cx - 3.0f, cy - 3.0f, 6.0f, 6.0f);
     }
 
-    // ------------------------------------------------------------ combo ----
+    void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
+                           float sliderPos, float, float, const juce::Slider::SliderStyle style,
+                           juce::Slider&) override
+    {
+        auto b = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
+
+        if (style == juce::Slider::LinearVertical)
+        {
+            auto track = b.withSizeKeepingCentre (10.0f, b.getHeight());
+            g.setColour (juce::Colour (0xff171310));
+            g.fillRoundedRectangle (track, 4.0f);
+            g.setColour (juce::Colour (0xff3a3128));
+            g.drawRoundedRectangle (track.reduced (0.5f), 4.0f, 1.0f);
+
+            const float pos = juce::jlimit (track.getY(), track.getBottom(), sliderPos);
+            auto fill = juce::Rectangle<float> (track.getX(), pos, track.getWidth(), track.getBottom() - pos);
+            juce::ColourGradient grad (ArabesqueColours::goldBright, fill.getX(), fill.getY(),
+                                       ArabesqueColours::copper, fill.getX(), fill.getBottom(), false);
+            g.setGradientFill (grad);
+            g.fillRoundedRectangle (fill, 4.0f);
+
+            juce::Rectangle<float> thumb (track.getX() - 4.0f, pos - 6.0f, track.getWidth() + 8.0f, 12.0f);
+            g.setColour (juce::Colour (0xff2a241e));
+            g.fillRoundedRectangle (thumb, 3.0f);
+            g.setColour (ArabesqueColours::gold);
+            g.drawRoundedRectangle (thumb, 3.0f, 1.0f);
+        }
+        else
+        {
+            auto track = b.withSizeKeepingCentre (b.getWidth(), 8.0f);
+            g.setColour (juce::Colour (0xff171310));
+            g.fillRoundedRectangle (track, 4.0f);
+            auto fill = track.withWidth (juce::jmax (8.0f, sliderPos - track.getX()));
+            g.setColour (ArabesqueColours::gold);
+            g.fillRoundedRectangle (fill, 4.0f);
+        }
+    }
+
     void drawComboBox (juce::Graphics& g, int width, int height, bool, int, int, int, int,
                        juce::ComboBox& box) override
     {
@@ -160,15 +195,8 @@ public:
         g.fillPath (arrow);
     }
 
-    juce::Font getComboBoxFont (juce::ComboBox&) override
-    {
-        return captionFont (12.0f);
-    }
-
-    juce::Font getPopupMenuFont() override
-    {
-        return captionFont (13.0f);
-    }
+    juce::Font getComboBoxFont (juce::ComboBox&) override { return captionFont (12.0f); }
+    juce::Font getPopupMenuFont() override               { return captionFont (13.0f); }
 
     void getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator, int standardItemHeight,
                                     int& idealWidth, int& idealHeight) override
@@ -178,7 +206,6 @@ public:
         idealWidth = (int) juce::GlyphArrangement::getStringWidth (getPopupMenuFont(), text) + 40;
     }
 
-    // ----------------------------------------------------------- buttons ---
     void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour&,
                                bool highlighted, bool down) override
     {
@@ -190,82 +217,131 @@ public:
         g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
     }
 
-    juce::Font getTextButtonFont (juce::TextButton&, int) override
-    {
-        return captionFont (11.5f);
-    }
-
-    // ------------------------------------------------------------ labels ---
+    juce::Font getTextButtonFont (juce::TextButton&, int) override { return captionFont (11.5f); }
     juce::Font getLabelFont (juce::Label&) override { return captionFont (12.0f); }
 };
 
 //==============================================================================
-// Small helper: a rotary knob with a caption label and a value readout,
-// exactly like the mock (knob / NAME / value). Captions can also sit on top.
+// Rotary knob + live value readout. Captions live on the skin image.
 struct KnobWithLabel : public juce::Component
 {
-    KnobWithLabel (juce::AudioProcessorValueTreeState& apvts, const juce::String& paramId,
+    KnobWithLabel (juce::AudioProcessorValueTreeState& s, const juce::String& paramId,
                    const juce::String& caption, juce::LookAndFeel* lnf,
                    bool captionOnTop = false)
-        : captionAtTop (captionOnTop)
+        : apvts (&s), id (paramId), captionAtTop (captionOnTop)
     {
+        juce::ignoreUnused (caption, captionAtTop);
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         slider.setLookAndFeel (lnf);
         slider.setDoubleClickReturnValue (false, 0.0);
+        slider.setPopupDisplayEnabled (false, false, nullptr);
         addAndMakeVisible (slider);
 
-        captionLabel.setText (caption, juce::dontSendNotification);
-        captionLabel.setFont (ArabesqueLookAndFeel::captionFont (11.0f));
-        captionLabel.setColour (juce::Label::textColourId, ArabesqueColours::textCaption);
-        captionLabel.setJustificationType (juce::Justification::centred);
-        addAndMakeVisible (captionLabel);
-
-        valueLabel.setFont (ArabesqueLookAndFeel::captionFont (11.5f));
+        valueLabel.setFont (ArabesqueLookAndFeel::captionFont (11.0f));
         valueLabel.setColour (juce::Label::textColourId, ArabesqueColours::textWarm);
+        valueLabel.setColour (juce::Label::backgroundColourId, ArabesqueColours::panelFill);
         valueLabel.setJustificationType (juce::Justification::centred);
+        valueLabel.setOpaque (true);
+        valueLabel.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (valueLabel);
 
-        attach (apvts, paramId);
+        attach (s, paramId);
     }
 
-    void attach (juce::AudioProcessorValueTreeState& apvts, const juce::String& paramId)
+    ~KnobWithLabel() override { slider.setLookAndFeel (nullptr); }
+
+    void attach (juce::AudioProcessorValueTreeState& s, const juce::String& paramId)
     {
-        attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, paramId, slider);
+        apvts = &s;
+        id = paramId;
+        attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (s, paramId, slider);
+        if (auto* p = s.getParameter (paramId))
+        {
+            if (p->getNumSteps() > 1 && p->getNumSteps() < 64)
+                slider.setNumDecimalPlacesToDisplay (0);
+        }
         refreshValueText();
         slider.onValueChange = [this] { refreshValueText(); };
     }
 
     void refreshValueText()
     {
-        valueLabel.setText (slider.getTextFromValue (slider.getValue()), juce::dontSendNotification);
+        juce::String t;
+        if (apvts != nullptr)
+            if (auto* p = apvts->getParameter (id))
+                t = p->getText (p->getValue(), 64);
+        if (t.isEmpty())
+            t = slider.getTextFromValue (slider.getValue());
+        if (valueLabel.getText() != t)
+            valueLabel.setText (t, juce::dontSendNotification);
     }
 
     void resized() override
     {
-        const int captionH = 15, valueH = 15, pad = 2;
+        const int valueH = juce::jmax (12, getHeight() / 8);
         auto b = getLocalBounds();
-
-        auto knobArea = captionAtTop ? b.withTrimmedTop (captionH + pad).withTrimmedBottom (valueH + pad)
-                                     : b.withTrimmedBottom (captionH + valueH + pad);
-        const int d = juce::jmin (knobArea.getWidth(), knobArea.getHeight());
-        slider.setBounds (knobArea.withSizeKeepingCentre (d, d));
-
-        if (captionAtTop)
-        {
-            captionLabel.setBounds (b.removeFromTop (captionH));
-            valueLabel.setBounds (getLocalBounds().removeFromBottom (valueH));
-        }
-        else
-        {
-            valueLabel.setBounds (getLocalBounds().removeFromBottom (valueH));
-            auto rest = getLocalBounds().withTrimmedBottom (valueH);
-            captionLabel.setBounds (rest.removeFromBottom (captionH));
-        }
+        valueLabel.setBounds (b.removeFromBottom (valueH));
+        const int d = juce::jmin (b.getWidth(), b.getHeight());
+        slider.setBounds (b.withSizeKeepingCentre (d, d));
     }
 
     juce::Slider slider;
-    juce::Label captionLabel, valueLabel;
+    juce::Label valueLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+    juce::AudioProcessorValueTreeState* apvts = nullptr;
+    juce::String id;
     bool captionAtTop = false;
+};
+
+//==============================================================================
+struct FaderWithLabel : public juce::Component
+{
+    FaderWithLabel (juce::AudioProcessorValueTreeState& s, const juce::String& paramId, juce::LookAndFeel* lnf)
+        : apvts (&s), id (paramId)
+    {
+        slider.setSliderStyle (juce::Slider::LinearVertical);
+        slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        slider.setLookAndFeel (lnf);
+        addAndMakeVisible (slider);
+
+        valueLabel.setFont (ArabesqueLookAndFeel::captionFont (11.0f));
+        valueLabel.setColour (juce::Label::textColourId, ArabesqueColours::textWarm);
+        valueLabel.setColour (juce::Label::backgroundColourId, ArabesqueColours::panelFill);
+        valueLabel.setJustificationType (juce::Justification::centred);
+        valueLabel.setOpaque (true);
+        valueLabel.setInterceptsMouseClicks (false, false);
+        addAndMakeVisible (valueLabel);
+
+        attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (s, paramId, slider);
+        refreshValueText();
+        slider.onValueChange = [this] { refreshValueText(); };
+    }
+
+    ~FaderWithLabel() override { slider.setLookAndFeel (nullptr); }
+
+    void refreshValueText()
+    {
+        juce::String t;
+        if (apvts != nullptr)
+            if (auto* p = apvts->getParameter (id))
+                t = p->getText (p->getValue(), 64);
+        if (t.isEmpty())
+            t = slider.getTextFromValue (slider.getValue());
+        if (valueLabel.getText() != t)
+            valueLabel.setText (t, juce::dontSendNotification);
+    }
+
+    void resized() override
+    {
+        auto b = getLocalBounds();
+        valueLabel.setBounds (b.removeFromBottom (16));
+        slider.setBounds (b.reduced (8, 2));
+    }
+
+    juce::Slider slider;
+    juce::Label valueLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+    juce::AudioProcessorValueTreeState* apvts = nullptr;
+    juce::String id;
 };

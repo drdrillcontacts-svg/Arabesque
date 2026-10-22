@@ -7,7 +7,10 @@ ArabesqueArpeggiator::ArabesqueArpeggiator (juce::AudioProcessorValueTreeState& 
 
 void ArabesqueArpeggiator::prepare (double sampleRate)
 {
-    sr = sampleRate;
+    sr = sampleRate > 0.0 ? sampleRate : 44100.0;
+    heldNotes.reserve (128);
+    sequence.reserve (128);
+    pendingOffs.reserve (64);
     reset();
 }
 
@@ -76,7 +79,11 @@ void ArabesqueArpeggiator::triggerNotes (juce::MidiBuffer& midi, int sampleOffse
 
 void ArabesqueArpeggiator::process (juce::MidiBuffer& midi, int numSamples, double bpm, double startPpq, bool isPlaying)
 {
-    const bool enabled = apvts.getRawParameterValue (ParamIDs::arpOn)->load() > 0.5f;
+    if (sr <= 0.0)
+        return;
+
+    auto* onParam = apvts.getRawParameterValue (ParamIDs::arpOn);
+    const bool enabled = onParam != nullptr && onParam->load() > 0.5f;
 
     if (! enabled)
     {

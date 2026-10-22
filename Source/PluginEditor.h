@@ -10,7 +10,7 @@ public:
     explicit ArabesqueAudioProcessorEditor (ArabesqueAudioProcessor&);
     ~ArabesqueAudioProcessorEditor() override;
 
-    void paint (juce::Graphics&) override {}
+    void paint (juce::Graphics&) override;
     void resized() override;
 
 private:

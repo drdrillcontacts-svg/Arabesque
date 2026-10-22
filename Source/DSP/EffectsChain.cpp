@@ -7,39 +7,59 @@ ArabesqueEffectsChain::ArabesqueEffectsChain (juce::AudioProcessorValueTreeState
 
 void ArabesqueEffectsChain::prepare (double sampleRate, int maxBlockSize, int numChannels)
 {
-    sr = sampleRate;
+    prepared.store (false);
+
+    sr = sampleRate > 0.0 ? sampleRate : 44100.0;
     channels = juce::jmax (1, numChannels);
+    maxBlock = juce::jmax (1, maxBlockSize);
 
-    juce::dsp::ProcessSpec spec;
-    spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = (juce::uint32) maxBlockSize;
-    spec.numChannels = (juce::uint32) channels;
+    juce::dsp::ProcessSpec stereoSpec;
+    stereoSpec.sampleRate = sr;
+    stereoSpec.maximumBlockSize = (juce::uint32) maxBlock;
+    stereoSpec.numChannels = (juce::uint32) juce::jmax (2, channels);
 
-    chorus.prepare (spec);
-    phaser.prepare (spec);
-    reverb.prepare (spec);
+    juce::dsp::ProcessSpec monoSpec;
+    monoSpec.sampleRate = sr;
+    monoSpec.maximumBlockSize = (juce::uint32) maxBlock;
+    monoSpec.numChannels = 1;
 
-    delayL.prepare (spec); delayR.prepare (spec);
-    delayL.setMaximumDelayInSamples ((int) (2.0 * sampleRate));
-    delayR.setMaximumDelayInSamples ((int) (2.0 * sampleRate));
+    chorus.prepare (stereoSpec);
+    phaser.prepare (stereoSpec);
+    reverb.prepare (stereoSpec);
 
-    delayDampL.prepare (spec); delayDampR.prepare (spec);
-    auto dampCoeffs = juce::dsp::IIR::Coefficients<float>::makeFirstOrderLowPass (sampleRate, 4500.0f);
-    *delayDampL.coefficients = *dampCoeffs;
-    *delayDampR.coefficients = *dampCoeffs;
+    delayL.prepare (monoSpec);
+    delayR.prepare (monoSpec);
+    const int maxDelay = juce::jmax (256, (int) (2.0 * sr) + 16);
+    delayL.setMaximumDelayInSamples (maxDelay);
+    delayR.setMaximumDelayInSamples (maxDelay);
 
-    driveGain.reset (sampleRate, 0.02);
-    driveMix.reset (sampleRate, 0.02);
-    masterGain.reset (sampleRate, 0.02);
-    panL.reset (sampleRate, 0.02);
-    panR.reset (sampleRate, 0.02);
-    delayWet.reset (sampleRate, 0.02);
-    delayDry.reset (sampleRate, 0.02);
-    delayFb.reset (sampleRate, 0.02);
-    delayTimeMs.reset (sampleRate, 0.05);
-    fxWet.reset (sampleRate, 0.02);
+    delayDampL.prepare (monoSpec);
+    delayDampR.prepare (monoSpec);
+    auto dampCoeffs = juce::dsp::IIR::Coefficients<float>::makeFirstOrderLowPass (sr, 4500.0f);
+    delayDampL.coefficients = dampCoeffs;
+    delayDampR.coefficients = juce::dsp::IIR::Coefficients<float>::makeFirstOrderLowPass (sr, 4500.0f);
+
+    driveGain.reset (sr, 0.02);
+    driveMix.reset (sr, 0.02);
+    masterGain.reset (sr, 0.02);
+    panL.reset (sr, 0.02);
+    panR.reset (sr, 0.02);
+    delayWet.reset (sr, 0.02);
+    delayDry.reset (sr, 0.02);
+    delayFb.reset (sr, 0.02);
+    delayTimeMs.reset (sr, 0.05);
+    fxWet.reset (sr, 0.02);
+
+    fxBuffer.setSize (2, maxBlock, false, true, false);
+    fxBuffer.clear();
 
     reset();
+    prepared.store (true);
+}
+
+void ArabesqueEffectsChain::release()
+{
+    prepared.store (false);
 }
 
 void ArabesqueEffectsChain::reset()
@@ -56,14 +76,27 @@ void ArabesqueEffectsChain::setTempo (double bpm)
 
 void ArabesqueEffectsChain::process (juce::AudioBuffer<float>& buffer, int numSamples)
 {
-    auto val = [this] (const char* id) { return apvts.getRawParameterValue (id)->load(); };
+    if (! prepared.load() || numSamples <= 0)
+        return;
 
     const int numCh = buffer.getNumChannels();
+    if (numCh <= 0)
+        return;
+
+    if (fxBuffer.getNumChannels() < 2 || fxBuffer.getNumSamples() < numSamples)
+        return; // never allocate on the audio thread
+
+    auto val = [this] (const char* id) -> float
+    {
+        if (auto* p = apvts.getRawParameterValue (id))
+            return p->load();
+        return 0.0f;
+    };
 
     //------------------------------------------------ master drive (tanh soft clip + make-up)
     const float driveAmt = val (ParamIDs::drive);
     driveMix.setTargetValue (driveAmt);
-    driveGain.setTargetValue (1.0f / (1.0f + driveAmt * 1.5f)); // loudness compensation
+    driveGain.setTargetValue (1.0f / (1.0f + driveAmt * 1.5f));
     const float pregain = 1.0f + driveAmt * 24.0f;
 
     for (int i = 0; i < numSamples; ++i)
@@ -73,17 +106,15 @@ void ArabesqueEffectsChain::process (juce::AudioBuffer<float>& buffer, int numSa
         const float g = pregain * makeup;
         for (int ch = 0; ch < numCh; ++ch)
         {
-            auto* d = buffer.getWritePointer (ch, i);
-            *d = *d * (1.0f - mix) + std::tanh (*d * g) * mix * 0.9f;
+            const float s = buffer.getSample (ch, i);
+            buffer.setSample (ch, i, s * (1.0f - mix) + std::tanh (s * g) * mix * 0.9f);
         }
     }
 
-    //------------------------------------------------ FX master on/off (smooth crossfade)
     const bool fxOn = val (ParamIDs::fxOn) > 0.5f;
     fxWet.setTargetValue (fxOn ? 1.0f : 0.0f);
     const bool fxActive = fxOn || fxWet.getCurrentValue() > 0.001f;
 
-    //------------------------------------------------ chorus / phaser settings
     chorus.setRate (val (ParamIDs::chorusRate));
     chorus.setDepth (val (ParamIDs::chorusDepth));
     chorus.setCentreDelay (7.0f);
@@ -96,14 +127,12 @@ void ArabesqueEffectsChain::process (juce::AudioBuffer<float>& buffer, int numSa
     phaser.setFeedback (0.35f);
     phaser.setMix (0.5f);
 
-    //------------------------------------------------ tempo-synced delay
     const double beats = Choices::divBeats ((int) val (ParamIDs::delayTime));
     delayTimeMs.setTargetValue ((float) (beats / (currentBpm / 60.0) * 1000.0));
     delayFb.setTargetValue (juce::jlimit (0.0f, 0.95f, val (ParamIDs::delayFeedback)));
     delayWet.setTargetValue (val (ParamIDs::delayMix));
     delayDry.setTargetValue (1.0f - val (ParamIDs::delayMix));
 
-    //------------------------------------------------ reverb settings
     const int rType = (int) val (ParamIDs::reverbType);
     const float decaySecs = val (ParamIDs::reverbDecay);
     const float dampingBase = rType == 1 ? 0.65f : rType == 2 ? 0.55f : rType == 3 ? 0.35f : 0.45f;
@@ -119,65 +148,67 @@ void ArabesqueEffectsChain::process (juce::AudioBuffer<float>& buffer, int numSa
     if (fxActive && reverbWet > 0.001f)
         reverb.setParameters (rp);
 
-    //------------------------------------------------ FX chain into scratch buffer
     if (fxActive)
     {
-        const int chs = juce::jmin (numCh, fxBuffer.getNumChannels());
-        for (int ch = 0; ch < chs; ++ch)
-            fxBuffer.copyFrom (ch, 0, buffer, ch, 0, numSamples);
+        fxBuffer.clear();
+        fxBuffer.copyFrom (0, 0, buffer, 0, 0, numSamples);
+        if (numCh > 1)
+            fxBuffer.copyFrom (1, 0, buffer, 1, 0, numSamples);
+        else
+            fxBuffer.copyFrom (1, 0, buffer, 0, 0, numSamples);
 
-        juce::dsp::AudioBlock<float> fxBlock (fxBuffer.getArrayOfWritePointers(), (size_t) fxBuffer.getNumChannels(), (size_t) numSamples);
+        juce::dsp::AudioBlock<float> fxBlock (fxBuffer.getArrayOfWritePointers(), 2, (size_t) numSamples);
         juce::dsp::ProcessContextReplacing<float> context (fxBlock);
 
         chorus.process (context);
         phaser.process (context);
 
-        // tempo delay (per sample, keeps its own smooth mix)
+        const float maxDelay = (float) juce::jmax (1, delayL.getMaximumDelayInSamples() - 2);
+
         for (int i = 0; i < numSamples; ++i)
         {
-            const float delaySamples = delayTimeMs.getNextValue() * (float) sr / 1000.0f;
+            const float delaySamples = juce::jlimit (1.0f, maxDelay, delayTimeMs.getNextValue() * (float) sr / 1000.0f);
             const float fb = delayFb.getNextValue();
             const float dWet = delayWet.getNextValue();
             const float dDry = delayDry.getNextValue();
 
-            float inL = fxBuffer.getSample (0, i);
-            float inR = chs > 1 ? fxBuffer.getSample (1, i) : inL;
+            const float inL = fxBuffer.getSample (0, i);
+            const float inR = fxBuffer.getSample (1, i);
 
             const float delayedL = delayL.popSample (0, delaySamples, true);
-            const float delayedR = chs > 1 ? delayR.popSample (1, delaySamples, true) : delayedL;
+            const float delayedR = delayR.popSample (0, delaySamples, true);
 
-            delayL.pushSample (0, inL + delayDampL.processSample (delayedL) * fb);
-            if (chs > 1)
-                delayR.pushSample (1, inR + delayDampR.processSample (delayedR) * fb);
+            const float fbL = delayDampL.coefficients != nullptr ? delayDampL.processSample (delayedL) : delayedL;
+            const float fbR = delayDampR.coefficients != nullptr ? delayDampR.processSample (delayedR) : delayedR;
+
+            delayL.pushSample (0, inL + fbL * fb);
+            delayR.pushSample (0, inR + fbR * fb);
 
             fxBuffer.setSample (0, i, inL * dDry + delayedL * dWet);
-            if (chs > 1) fxBuffer.setSample (1, i, inR * dDry + delayedR * dWet);
+            fxBuffer.setSample (1, i, inR * dDry + delayedR * dWet);
         }
 
-        // reverb tail on the wet buffer
         if (reverbWet > 0.001f)
             reverb.process (context);
 
-        // crossfade dry <-> wet (clickless FX on/off)
         for (int i = 0; i < numSamples; ++i)
         {
             const float wet = fxWet.getNextValue();
-            for (int ch = 0; ch < chs; ++ch)
+            for (int ch = 0; ch < numCh; ++ch)
             {
                 const float dry = buffer.getSample (ch, i);
-                buffer.setSample (ch, i, dry + (fxBuffer.getSample (ch, i) - dry) * wet);
+                const float wetS = fxBuffer.getSample (juce::jmin (ch, 1), i);
+                buffer.setSample (ch, i, dry + (wetS - dry) * wet);
             }
         }
     }
     else
     {
-        // keep smoothing states ticking so the next block starts on-target
         fxWet.skip (numSamples);
         delayTimeMs.skip (numSamples); delayFb.skip (numSamples);
         delayWet.skip (numSamples);    delayDry.skip (numSamples);
     }
 
-    //------------------------------------------------ pan + master gain (smoothed, clickless)
     const float panVal = val (ParamIDs::pan);
     const float angle = (panVal * 0.5f + 0.5f) * juce::MathConstants<float>::halfPi;
     panL.setTargetValue (std::cos (angle));
@@ -190,6 +221,7 @@ void ArabesqueEffectsChain::process (juce::AudioBuffer<float>& buffer, int numSa
         const float pr = panR.getNextValue();
         const float mg = masterGain.getNextValue();
         buffer.setSample (0, i, buffer.getSample (0, i) * pl * mg);
-        if (numCh > 1) buffer.setSample (1, i, buffer.getSample (1, i) * pr * mg);
+        if (numCh > 1)
+            buffer.setSample (1, i, buffer.getSample (1, i) * pr * mg);
     }
 }
