@@ -35,11 +35,6 @@ juce_add_plugin(ARABESQUE
 
 juce_generate_juce_header(ARABESQUE)
 
-juce_add_binary_data(ArabesqueAssets SOURCES
-    Assets/GuiSkin.png
-    Assets/Artwork.jpg
-)
-
 target_sources(ARABESQUE PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
@@ -57,7 +52,6 @@ target_compile_definitions(ARABESQUE PUBLIC
 )
 
 target_link_libraries(ARABESQUE PRIVATE
-    ArabesqueAssets
     juce::juce_audio_utils
     juce::juce_dsp
     PUBLIC

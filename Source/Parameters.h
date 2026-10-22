@@ -25,18 +25,25 @@ namespace ParamIDs
     static constexpr const char* osc2Octave = "OSC2_OCTAVE";
     static constexpr const char* osc2Semi   = "OSC2_SEMI";
     static constexpr const char* osc2Fine   = "OSC2_FINE";
+    static constexpr const char* pwm        = "PWM";
+    static constexpr const char* oscFM      = "OSC_FM";
 
     // Mixer (dB levels; the two OSC knobs mirror these)
     static constexpr const char* mixOsc1    = "MIX_OSC1";
     static constexpr const char* mixOsc2    = "MIX_OSC2";
     static constexpr const char* mixNoise   = "MIX_NOISE";
     static constexpr const char* mixSub     = "MIX_SUB";
+    static constexpr const char* unison     = "UNISON";
+    static constexpr const char* unisonDet  = "UNISON_DETUNE";
+    static constexpr const char* unisonSpr  = "UNISON_SPREAD";
 
     // Filter
     static constexpr const char* filterType = "FILTER_TYPE";
     static constexpr const char* cutoff     = "CUTOFF";
     static constexpr const char* resonance  = "RESONANCE";
     static constexpr const char* keyFollow  = "KEY_FOLLOW";
+    static constexpr const char* filterEnv  = "FILTER_ENV";
+    static constexpr const char* filterDrive= "FILTER_DRIVE";
 
     // Envelopes: amp, filter, pitch
     static constexpr const char* ampAttack  = "ATTACK";
@@ -94,6 +101,12 @@ namespace Choices
     inline juce::StringArray noteDivs()    { return { "1/2", "1/4", "1/4 T", "1/4 D", "1/8", "1/8 T",
                                                       "1/8 D", "1/16", "1/16 T", "1/16 D", "1/32", "1/32 T" }; }
     inline juce::StringArray voiceCounts() { return { "2", "4", "6", "8", "12", "16", "24", "32" }; }
+    inline juce::StringArray unisonCounts() { return { "1", "2", "3", "5", "7" }; }
+    inline int unisonFromIndex (int idx)
+    {
+        static constexpr int n[] = { 1, 2, 3, 5, 7 };
+        return n[juce::jlimit (0, 4, idx)];
+    }
 
     // Beat length of every note division above (quarter note = 1.0)
     inline double divBeats (int index)
@@ -211,18 +224,25 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     intP    (ParamIDs::osc2Octave, "Osc 2 Octave", -3, 3, 0, ParamFormat::plain);
     intP    (ParamIDs::osc2Semi,   "Osc 2 Semitone", -12, 12, 0, ParamFormat::signedSemitones);
     floatP  (ParamIDs::osc2Fine,   "Osc 2 Fine", NormalisableRange<float> (-100.0f, 100.0f, 1.0f), 6.0f, ParamFormat::cents);
+    floatP  (ParamIDs::pwm,        "Pulse Width", pctRange(), 0.5f, ParamFormat::percent);
+    floatP  (ParamIDs::oscFM,      "FM", pctRange(), 0.0f, ParamFormat::percent);
 
     //---------------------------------------------------------------- Mixer --
     floatP (ParamIDs::mixOsc1,  "Osc 1 Level", gainRange(), -3.0f, ParamFormat::db);
     floatP (ParamIDs::mixOsc2,  "Osc 2 Level", gainRange(), -6.0f, ParamFormat::db);
     floatP (ParamIDs::mixNoise, "Noise Level", gainRange(), -60.0f, ParamFormat::db);
-    floatP (ParamIDs::mixSub,   "Sub Level",   gainRange(), -60.0f, ParamFormat::db);
+    floatP (ParamIDs::mixSub,   "Sub Level",   gainRange(), -12.0f, ParamFormat::db);
+    choiceP (ParamIDs::unison,    "Unison", Choices::unisonCounts(), 0);
+    floatP  (ParamIDs::unisonDet, "Detune", NormalisableRange<float> (0.0f, 50.0f, 0.1f), 12.0f, ParamFormat::cents);
+    floatP  (ParamIDs::unisonSpr, "Spread", pctRange(), 0.55f, ParamFormat::percent);
 
     //--------------------------------------------------------------- Filter --
     choiceP (ParamIDs::filterType, "Filter Type", Choices::filterTypes(), 2);
     floatP  (ParamIDs::cutoff,     "Cutoff", NormalisableRange<float> (20.0f, 20000.0f, 0.1f, 0.3f), 2800.0f, ParamFormat::hz);
     floatP  (ParamIDs::resonance,  "Resonance", pctRange(), 0.34f, ParamFormat::percent);
-    floatP  (ParamIDs::keyFollow,  "Key Follow", pctRange(), 0.5f, ParamFormat::percent);
+    floatP  (ParamIDs::keyFollow,  "Key Follow", pctRange(), 0.35f, ParamFormat::percent);
+    floatP  (ParamIDs::filterEnv,  "Env Amt", pctRange(), 0.42f, ParamFormat::percent);
+    floatP  (ParamIDs::filterDrive,"F Drive", pctRange(), 0.12f, ParamFormat::percent);
 
     //-------------------------------------------------------------- Envelopes
     floatP (ParamIDs::ampAttack,  "Amp Attack",   timeRange (0.001f, 2.0f),  0.005f, ParamFormat::ms);

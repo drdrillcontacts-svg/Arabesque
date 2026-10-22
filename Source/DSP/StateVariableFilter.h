@@ -2,14 +2,8 @@
 #include <JuceHeader.h>
 
 //==============================================================================
-// TPT (Zavalishin, "The Art of VA Filter Design") state variable filter.
-// Real resonance up to near self-oscillation - the starter's "resonance" knob
-// was only a makeup gain on a one-pole filter, so this is one of the biggest
-// sound upgrades.
-//
-// Modes mirror the UI: LP 6 / LP 12 / LP 24 / HP 12 / BP 12.  Stereo.
+// TPT state-variable filter with optional input drive.
 //==============================================================================
-
 class TPTStateVariableFilter
 {
 public:
@@ -17,7 +11,7 @@ public:
 
     void prepare (double newSampleRate)
     {
-        sampleRate = newSampleRate;
+        sampleRate = newSampleRate > 0.0 ? newSampleRate : 44100.0;
         reset();
     }
 
@@ -32,20 +26,26 @@ public:
     }
 
     void setMode (int m)  { mode = (Mode) juce::jlimit (0, 4, m); }
-    void setMode (Mode m) { mode = m; }
+    void setDrive (float d) { drive = juce::jlimit (0.0f, 1.0f, d); }
 
-    // resonance input 0..1 -> damping R (R = 1 means no resonance)
     void setCutoffAndResonance (float cutoffHz, float resonance01)
     {
-        cutoffHz = juce::jlimit (10.0f, (float) sampleRate * 0.24f, cutoffHz);
+        cutoffHz = juce::jlimit (20.0f, (float) sampleRate * 0.22f, cutoffHz);
         const double wd = juce::MathConstants<double>::twoPi * (double) cutoffHz;
-        const double wa = 2.0 * sampleRate * std::tan (wd * 0.5 / sampleRate); // pre-warped
+        const double wa = 2.0 * sampleRate * std::tan (wd * 0.5 / sampleRate);
         g = (float) juce::jlimit (0.0, 0.98, wa / (2.0 * sampleRate));
-        R = 1.0f - juce::jlimit (0.0f, 0.99f, resonance01) * 0.97f;
+        R = 1.0f - juce::jlimit (0.0f, 0.97f, resonance01) * 0.96f;
     }
 
     inline float process (int channel, float input)
     {
+        channel = juce::jlimit (0, 1, channel);
+        if (drive > 0.001f)
+        {
+            const float gDrive = 1.0f + drive * 6.0f;
+            input = std::tanh (input * gDrive) / std::tanh (gDrive);
+        }
+
         switch (mode)
         {
             case Mode::lp6:  return processOnePole (channel, input);
@@ -55,7 +55,7 @@ public:
             case Mode::lp24:
             default:
             {
-                const float first = processStage12  (s1[channel],  s2[channel],  input).lp;
+                const float first = processStage12 (s1[channel],  s2[channel],  input).lp;
                 return processStage12 (sB1[channel], sB2[channel], first).lp;
             }
         }
@@ -66,7 +66,6 @@ private:
 
     inline SvfOut processStage12 (float& st1, float& st2, float in) const
     {
-        // textbook TPT SVF (trapezoidal integrators), stable for any g < Nyquist
         const float hp = (in - (2.0f * R + g) * st1 - st2)
                        / (1.0f + 2.0f * R * g + g * g);
         const float v1 = g * hp;
@@ -80,7 +79,6 @@ private:
 
     inline float processOnePole (int ch, float in)
     {
-        // Zavalishin 1-pole low pass
         const float g1 = g / (1.0f + g);
         const float v  = (in - z1[ch]) * g1;
         const float lp = v + z1[ch];
@@ -90,8 +88,8 @@ private:
 
     double sampleRate = 44100.0;
     Mode   mode       = Mode::lp24;
-    float  g = 0.1f, R = 0.7f;
-    float  s1[2]  { 0.0f, 0.0f },  s2[2]  { 0.0f, 0.0f };  // stage A
-    float  sB1[2] { 0.0f, 0.0f },  sB2[2] { 0.0f, 0.0f };  // stage B (LP24 only)
-    float  z1[2]  { 0.0f, 0.0f };                          // one-pole state
+    float  g = 0.1f, R = 0.7f, drive = 0.0f;
+    float  s1[2]  { 0.0f, 0.0f },  s2[2]  { 0.0f, 0.0f };
+    float  sB1[2] { 0.0f, 0.0f },  sB2[2] { 0.0f, 0.0f };
+    float  z1[2]  { 0.0f, 0.0f };
 };

@@ -14,7 +14,7 @@ ArabesqueAudioProcessor::ArabesqueAudioProcessor()
     synth.addSound (new ArabesqueSound());
     synth.setNoteStealingEnabled (true);
 
-    currentPresetName = getFactoryPresets().front().name;
+    applyFactoryPreset (0);
 }
 
 //==============================================================================
@@ -175,7 +175,7 @@ const juce::String ArabesqueAudioProcessor::getProgramName (int index)
 {
     auto& presets = getFactoryPresets();
     return juce::isPositiveAndBelow (index, (int) presets.size())
-         ? juce::String (index + 1).paddedLeft ('0', 2) + " - " + presets[(size_t) index].name
+         ? juce::String (index + 1).paddedLeft ('0', 2) + "  " + presets[(size_t) index].name
          : juce::String();
 }
 
